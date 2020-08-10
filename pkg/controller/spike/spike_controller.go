@@ -2,6 +2,7 @@ package spike
 
 import (
 	"context"
+	"time"
 
 	spikev1alpha1 "github.com/iamkirkbater/multiple-operator/pkg/apis/spike/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -37,7 +38,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New("spike-controller", mgr, controller.Options{Reconciler: r})
+	c, err := controller.New("spike-controller", mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: 3})
 	if err != nil {
 		return err
 	}
@@ -97,5 +98,8 @@ func (r *ReconcileSpike) Reconcile(request reconcile.Request) (reconcile.Result,
 		return reconcile.Result{}, err
 	}
 
+	time.Sleep(5 * time.Second)
+
+	reqLogger.Info("Reconcile Complete")
 	return reconcile.Result{}, nil
 }
