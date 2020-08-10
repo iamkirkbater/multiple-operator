@@ -23,6 +23,10 @@ import (
 
 var log = logf.Log.WithName("controller_spike")
 
+const (
+	lockMaxDuration = 5 * time.Minute
+)
+
 /**
 * USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
 * business logic.  Delete these comments after modifying this file.*
@@ -46,12 +50,12 @@ func ignoreMetadataUpdatesPredicate() predicate.Predicate {
 			wasLocked := e.MetaOld.GetAnnotations()["Locked"]
 			isLocked := e.MetaNew.GetAnnotations()["Locked"]
 
-			if isLocked == "true" {
-				// do not process if it's locked.
+			if wasLocked == "" && isLocked != "" {
+				// do not process it just locked.
 				return false
 			}
 
-			if wasLocked == "true" && isLocked == "false" {
+			if wasLocked != "" && isLocked == "" {
 				// do not process if we just unlocked
 				return false
 			}
@@ -124,18 +128,28 @@ func (r *ReconcileSpike) Reconcile(request reconcile.Request) (reconcile.Result,
 		return reconcile.Result{}, err
 	}
 
-	// If Instance is already locked, bail out immediately
-	if instance.ObjectMeta.Annotations["Locked"] == "true" {
-		log.Info("Instance already locked")
-		return reconcile.Result{}, nil
+	now := time.Now()
+
+	// If instance is locked and lock time is less than duration, bail
+	if instance.ObjectMeta.Annotations["Locked"] != "" {
+		lockTime, _ := time.Parse(time.RFC3339, instance.ObjectMeta.Annotations["Locked"])
+		lockTimeDuration := lockTime.Add(lockMaxDuration)
+		lockTimeBeforeDuration := lockTimeDuration.After(now)
+		log.Info("Locked ", "Lock Time:", lockTime, "Now:", now, "LockTimeEnd", lockTimeDuration, "Locked:", lockTimeBeforeDuration)
+		if lockTimeBeforeDuration {
+			// Lock has not expired
+			log.Info("Instance already locked")
+			return reconcile.Result{}, nil
+		}
+		log.Info("Lock on resource has expired.")
 	}
 
 	// Apply our lock
-	instance.ObjectMeta.Annotations["Locked"] = "true"
+	instance.ObjectMeta.Annotations["Locked"] = now.Format(time.RFC3339)
 	err = r.client.Update(context.TODO(), instance)
 	if err != nil {
 		if errors.IsConflict(err) {
-			log.Info("Resource is locked by another process.")
+			log.Info("Conflict: Resource is locked by another process.")
 			return reconcile.Result{}, nil
 		}
 		log.Error(err, "There was an error obtaining the lock.")
@@ -147,7 +161,7 @@ func (r *ReconcileSpike) Reconcile(request reconcile.Request) (reconcile.Result,
 	log.Info("Unlocking")
 
 	// Apply changes and unlock
-	instance.ObjectMeta.Annotations["Locked"] = "false"
+	instance.ObjectMeta.Annotations["Locked"] = ""
 	err = r.client.Update(context.TODO(), instance)
 	if err != nil {
 		log.Error(err, "There was an error applying updates.")
