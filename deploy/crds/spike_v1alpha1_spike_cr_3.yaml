@@ -1,7 +1,7 @@
 apiVersion: spike.openshift.com/v1alpha1
 kind: Spike
 metadata:
-  name: example-spike-1
+  name: example-spike-3
   namespace: operator-test
 spec:
   # Add fields here
